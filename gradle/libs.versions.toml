@@ -1,6 +1,7 @@
 [versions]
 # libraries
 junit = "4.13.2"
+java = "21"
 
 # plugins
 changelog = "2.2.1"

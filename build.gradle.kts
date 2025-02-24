@@ -12,18 +12,31 @@ plugins {
     alias(libs.plugins.kover) // Gradle Kover Plugin
 }
 
+// Set the JVM language level used to build the project.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
+    }
+}
+kotlin {
+    jvmToolchain(libs.versions.java.get().toInt())
+}
+
 
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
 
-// pawrequest custom github repo/dependency adder ASSUMES HTTPS://REPO_URL/.../VENDOR/ASSET
+// BEGINS
+// pawrequest custom GitHub repo/dependency adder ASSUMES REPO_URL/.../VENDOR/ASSET
 val thisArtifactID = providers.gradleProperty("pluginRepositoryUrl").get().substringAfterLast("/")
-val thisVendorName = providers.gradleProperty("pluginRepositoryUrl").get().substringBeforeLast("/").substringAfterLast("/")
-val theseCustomDependencies = providers.gradleProperty("customDependencies")
-    .orNull // Returns null if the property is missing
-    ?.split(",") // Split only if the property is present
-    ?.filter { it.isNotBlank() } // Filter out empty strings
-    ?: emptyList() // Provide an empty list if the property is missing
+val thisVendorName =
+    providers.gradleProperty("pluginRepositoryUrl").get().substringBeforeLast("/").substringAfterLast("/")
+
+val theseCustomDependencies =
+    providers.gradleProperty("customDependencies").orNull // Returns null if the property is missing
+        ?.split(",") // Split only if the property is present
+        ?.filter { it.isNotBlank() } // Filter out empty strings
+        ?: emptyList() // Provide an empty list if the property is missing
 
 fun githubPackageUri(vendor: String = thisVendorName, artifactID: String = thisArtifactID): URI {
     return URI.create("https://maven.pkg.github.com/$vendor/$artifactID")
@@ -35,34 +48,33 @@ fun addRepoUri(repositoryHandler: RepositoryHandler, uri: URI) {
         name = "GitHubPackages"
 
         credentials {
-            username = System.getenv("GITHUB_USERNAME")
-            password = System.getenv("PUBLISH_TOKEN")
+            username = project.findProperty("gpr.user") as String? ?: System.getenv("USERNAME_GITHUB")
+            password = project.findProperty("gpr.key") as String? ?: System.getenv("PUBLISH_TOKEN")
         }
     }
 }
 
 fun addCustomRepos(repositoryHandler: RepositoryHandler) {
-    println("Custom Repos: $theseCustomDependencies")
     for (dep in theseCustomDependencies) {
-        println("dep: $theseCustomDependencies")
-
         val depVals = dep.split(" ")
-        val repoUri = githubPackageUri(depVals[0], depVals[1])
+        val asset = depVals[1]
+        val vendor = depVals[0]
+        val repoUri = githubPackageUri(vendor, asset)
+        println("Adding custom repo: $repoUri")
         addRepoUri(repositoryHandler, repoUri)
     }
 }
 
 
-
 fun addCustomDependencies(dependencyHandler: DependencyHandler) {
-    println("Custom Dependencies: $theseCustomDependencies")
-
     for (dep in theseCustomDependencies) {
-        println("dep: $dep")
-
         val depVals = dep.split(" ")
-        val imp = "${depVals[2]}:${depVals[1]}:${depVals[3]}"
-        dependencyHandler.implementation(imp)
+        val group = depVals[2]
+        val asset = depVals[1]
+        val version = depVals[3]
+        val dependency = "$group:$asset:$version"
+        println("Adding custom dependency: $dependency")
+        dependencyHandler.implementation(dependency)
     }
 }
 
@@ -75,17 +87,10 @@ fun addPublication(publicationContainer: PublicationContainer) {
         version = providers.gradleProperty("pluginVersion").get()
     }
 }
+// pawrequest custom github repo/dependency adder ASSUMES HTTPS://REPO_URL/.../VENDOR/ASSET
+// ENDS
 
 
-
-
-
-// Set the JVM language level used to build the project.
-kotlin {
-    jvmToolchain(21)
-}
-
-// Configure project's dependencies
 repositories {
     mavenCentral()
     addCustomRepos(this)
@@ -99,7 +104,6 @@ repositories {
 dependencies {
     testImplementation(libs.junit)
     addCustomDependencies(this)
-
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
@@ -110,7 +114,6 @@ dependencies {
         // Plugin Dependencies. Uses `platformPlugins` property from the gradle.properties file for plugin from JetBrains Marketplace.
         plugins(providers.gradleProperty("platformPlugins").map { it.split(',') })
 
-//        instrumentationTools()
         pluginVerifier()
         zipSigner()
         testFramework(TestFrameworkType.Platform)
@@ -163,3 +166,11 @@ intellijPlatform {
 }
 
 
+tasks {
+    wrapper {
+        gradleVersion = providers.gradleProperty("gradleVersion").get()
+    }
+    publishPlugin {
+        dependsOn(patchChangelog)
+    }
+}
